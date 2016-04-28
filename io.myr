@@ -1,5 +1,89 @@
-pkg io = 
 
+pkg io = 
+	
+	type status = union
+		`Ok
+		`Err byte[:]
+		`Eof
+	;;
+
+	trait readable @a =
+		read	: (r : @a, b : byte[:] -> (uint64, status))
+	;;
+	
+	trait writeable @a =
+		write	: (w : @a, b : byte[:] -> (uint64, status))
+	;;
+	
+	generic copy : (w : @a::writeable, r : @b::readable ->  (uint64, status)) 
+	generic readall : (r : @a::readable, buf : byte[:] ->  (uint64, status))
+	generic writeall : (w : @a::writeable, buf : byte[:] ->  (uint64, status))
+
+	type nullwriter = int
+
+	impl writeable nullwriter =
+		write = {w, buf; -> (buf.len, `Ok)}
+	;;
+	
+	var discard : nullwriter = 0
 ;;
 
+generic copy = {w, r
+	var buf : byte[4096]
+	var ncopied
+	var rn, wn
+	var rstatus, wstatus
+	
+	ncopied = 0
+	while true
+		(rn, rstatus) = readall(r, buf[:])
+		(wn, wstatus) = writeall(w, buf[:rn])
+		ncopied += wn
+		match rstatus
+		| `Ok:
+		| `Eof: -> (ncopied, `Ok)
+		| `Err msg: -> (ncopied, `Err msg)
+		;;
+		match wstatus
+		| `Ok:
+		| `Eof: -> (ncopied, `Ok)
+		| `Err msg: -> (ncopied, `Err msg)
+		;;
+	;;
+}
 
+generic readall = {r, buf
+	var nread
+	var n, status
+	
+	nread = 0
+	while buf.len != 0
+		(n, status) = read(r, buf)
+		nread += n
+		buf = buf[n:]
+		match status
+		| `Ok:
+		| `Eof: -> (nread, `Eof)
+		| `Err msg: -> (nread, `Err msg)
+		;;
+	;;
+	-> (nread, `Ok)
+}
+
+generic writeall = {w, buf
+	var nwrite
+	var n, status
+	
+	nwrite = 0
+	while buf.len != 0
+		(n, status) = write(w, buf)
+		nwrite += n
+		buf = buf[n:]
+		match status
+		| `Ok:
+		| `Eof: -> (nwrite, `Eof)
+		| `Err msg: -> (nwrite, `Err msg)
+		;;
+	;;
+	-> (nwrite, `Ok)
+}
