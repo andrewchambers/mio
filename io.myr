@@ -1,6 +1,6 @@
+use std
 
 pkg io = 
-	
 	type status = union
 		`Ok
 		`Err byte[:]
@@ -8,24 +8,25 @@ pkg io =
 	;;
 
 	trait readable @a =
-		read	: (r : @a, b : byte[:] -> (uint64, status))
+		read : (r : @a, b : byte[:] -> (uint64, status))
 	;;
 	
 	trait writeable @a =
-		write	: (w : @a, b : byte[:] -> (uint64, status))
+		write : (w : @a, b : byte[:] -> (uint64, status))
 	;;
 	
 	generic copy : (w : @a::writeable, r : @b::readable ->  (uint64, status)) 
-	generic readall : (r : @a::readable, buf : byte[:] ->  (uint64, status))
+	generic fill : (r : @a::readable, buf : byte[:] ->  (uint64, status))
 	generic writeall : (w : @a::writeable, buf : byte[:] ->  (uint64, status))
+	generic slurp : (r : @a::readable ->  std.result(byte[:], byte[:]))
 
-	type nullwriter = int
+	type nullwriter = void
 
 	impl writeable nullwriter =
 		write = {w, buf; -> (buf.len, `Ok)}
 	;;
 	
-	var discard : nullwriter = 0
+	var discard : nullwriter
 ;;
 
 generic copy = {w, r
@@ -36,7 +37,7 @@ generic copy = {w, r
 	
 	ncopied = 0
 	while true
-		(rn, rstatus) = readall(r, buf[:])
+		(rn, rstatus) = fill(r, buf[:])
 		(wn, wstatus) = writeall(w, buf[:rn])
 		ncopied += wn
 		match rstatus
@@ -52,7 +53,7 @@ generic copy = {w, r
 	;;
 }
 
-generic readall = {r, buf
+generic fill = {r, buf
 	var nread
 	var n, status
 	
@@ -86,4 +87,32 @@ generic writeall = {w, buf
 		;;
 	;;
 	-> (nwrite, `Ok)
+}
+
+
+generic slurp = {r
+	var len, bufsz
+	var buf
+	var n, status
+
+	len = 0
+	bufsz = 4096
+	buf = std.slalloc(bufsz)
+	while true
+		(n, status) = read(r, buf[len:])
+		len += n
+		match status
+		| `Ok:
+			if len + 2*n >= bufsz castto(uint64)
+				bufsz *= 2
+				std.slgrow(&buf, bufsz)
+			;;
+		| `Eof:
+			-> `std.Ok buf[:len]
+		| `Err msg:
+			std.slfree(buf)
+			-> `std.Fail msg
+		;;
+	;;
+	std.die("unreachable")
 }
